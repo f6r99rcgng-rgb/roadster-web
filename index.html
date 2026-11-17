@@ -1,1 +1,82 @@
 
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ROADSTER BLEテスト</title>
+</head>
+<body>
+  <h1>ROADSTER BLEテスト</h1>
+  <button id="connect">ESP32に接続</button>
+  <p>
+    <input id="message" value="TEST123" aria-label="送る文字">
+    <button id="send" disabled>送信</button>
+  </p>
+  <p id="status">未接続です</p>
+
+  <script>
+    const serviceUuid = "12345678-1234-5678-1234-56789abcdef0";
+    const dataUuid = "12345678-1234-5678-1234-56789abcdef1";
+
+    const connectButton = document.getElementById("connect");
+    const sendButton = document.getElementById("send");
+    const status = document.getElementById("status");
+
+    let characteristic = null;
+
+    connectButton.addEventListener("click", async () => {
+      try {
+        if (!navigator.bluetooth) {
+          throw new Error("Bluefyでこのページを開いてください");
+        }
+
+        status.textContent = "接続する機器を選んでください";
+
+        const device = await navigator.bluetooth.requestDevice({
+          filters: [{ name: "ROADSTER-BLE" }],
+          optionalServices: [serviceUuid]
+        });
+
+        device.addEventListener("gattserverdisconnected", () => {
+          characteristic = null;
+          sendButton.disabled = true;
+          status.textContent = "切断されました。もう一度接続してください";
+        });
+
+        const server = await device.gatt.connect();
+        const service = await server.getPrimaryService(serviceUuid);
+        characteristic = await service.getCharacteristic(dataUuid);
+
+        sendButton.disabled = false;
+        status.textContent = "接続できました！";
+      } catch (error) {
+        status.textContent = "接続できませんでした：" + error.message;
+      }
+    });
+
+    sendButton.addEventListener("click", async () => {
+      try {
+        const text = document.getElementById("message").value;
+        const bytes = new TextEncoder().encode(text);
+
+        if (bytes.length === 0) {
+          throw new Error("文字を入力してください");
+        }
+
+        if (bytes.length > 20) {
+          throw new Error("今回はUTF-8で20バイト以内にしてください");
+        }
+
+        sendButton.disabled = true;
+        await characteristic.writeValueWithResponse(bytes);
+        status.textContent = "送信しました：" + text;
+      } catch (error) {
+        status.textContent = "送信できませんでした：" + error.message;
+      } finally {
+        sendButton.disabled = characteristic === null;
+      }
+    });
+  </script>
+</body>
+</html>
