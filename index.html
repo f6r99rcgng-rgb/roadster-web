@@ -32,10 +32,10 @@
 
         status.textContent = "接続する機器を選んでください";
 
-        const device = await navigator.bluetooth.requestDevice({
-          filters: [{ name: "ROADSTER-BLE" }],
-          optionalServices: [serviceUuid]
-        });
+const device = await navigator.bluetooth.requestDevice({
+  acceptAllDevices: true,
+  optionalServices: [serviceUuid]
+});
 
         device.addEventListener("gattserverdisconnected", () => {
           characteristic = null;
@@ -50,7 +50,7 @@
         sendButton.disabled = false;
         status.textContent = "接続できました！";
       } catch (error) {
-        status.textContent = "接続できませんでした：" + error.message;
+status.textContent = "接続できませんでした：" + String(error?.message ?? error);
       }
     });
 
