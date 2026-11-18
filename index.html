@@ -3,79 +3,246 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ROADSTER BLEテスト</title>
+  <title>ROADSTER GPS</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      max-width: 480px;
+      margin: 0 auto;
+      padding: 24px;
+      background: #111;
+      color: #eee;
+    }
+
+    button {
+      padding: 12px 20px;
+      font-size: 18px;
+    }
+
+    .card {
+      background: #222;
+      padding: 18px;
+      margin-top: 18px;
+      border-radius: 12px;
+    }
+
+    .label {
+      color: #aaa;
+      font-size: 14px;
+    }
+
+    #clock {
+      font-size: 42px;
+      margin-top: 8px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .coordinate {
+      font-size: 24px;
+      margin: 8px 0 18px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    #status, #gpsStatus {
+      line-height: 1.6;
+    }
+  </style>
 </head>
 <body>
-  <h1>ROADSTER BLEテスト</h1>
+  <h1>ROADSTER GPS</h1>
   <button id="connect">ESP32に接続</button>
-  <p>
-    <input id="message" value="TEST123" aria-label="送る文字">
-    <button id="send" disabled>送信</button>
-  </p>
   <p id="status">未接続です</p>
+
+  <div class="card">
+    <div class="label">GPS時刻・日本時間（JST）</div>
+    <div id="clock">--:--:--</div>
+  </div>
+
+  <div class="card">
+    <div class="label">緯度（度）</div>
+    <div id="latitude" class="coordinate">--</div>
+
+    <div class="label">経度（度）</div>
+    <div id="longitude" class="coordinate">--</div>
+
+    <div id="gpsStatus">GPSデータ待ち</div>
+  </div>
 
   <script>
     const serviceUuid = "12345678-1234-5678-1234-56789abcdef0";
     const dataUuid = "12345678-1234-5678-1234-56789abcdef1";
 
     const connectButton = document.getElementById("connect");
-    const sendButton = document.getElementById("send");
-    const status = document.getElementById("status");
+    const statusElement = document.getElementById("status");
+    const clockElement = document.getElementById("clock");
+    const latitudeElement = document.getElementById("latitude");
+    const longitudeElement = document.getElementById("longitude");
+    const gpsStatusElement = document.getElementById("gpsStatus");
 
+    const decoder = new TextDecoder("utf-8");
+
+    let currentDevice = null;
     let characteristic = null;
+    let lastPacketAt = 0;
+    let pending = { time: null, latitude: null, longitude: null };
 
-    connectButton.addEventListener("click", async () => {
-      try {
-        if (!navigator.bluetooth) {
-          throw new Error("Bluefyでこのページを開いてください");
+    function clearValues(message) {
+      clockElement.textContent = "--:--:--";
+      latitudeElement.textContent = "--";
+      longitudeElement.textContent = "--";
+      gpsStatusElement.textContent = message;
+    }
+
+    function receiveGps(event) {
+      const message = decoder.decode(event.target.value).trim();
+      const comma = message.indexOf(",");
+
+      if (comma < 0) {
+        return;
+      }
+
+      const type = message.slice(0, comma);
+      const value = message.slice(comma + 1);
+
+      if (type === "T") {
+        pending = {
+          time: value,
+          latitude: null,
+          longitude: null
+        };
+      } else if (type === "A") {
+        pending.latitude = value;
+      } else if (type === "O") {
+        pending.longitude = value;
+      } else if (type === "S") {
+        lastPacketAt = Date.now();
+
+        if (value === "WAIT") {
+          clearValues("衛星を受信中です。空の見える場所で待ってください");
+        } else if (value === "FIX") {
+          const latitude = Number(pending.latitude);
+          const longitude = Number(pending.longitude);
+
+          let complete = pending.time !== null;
+          complete = complete && pending.latitude !== null;
+          complete = complete && pending.longitude !== null;
+          complete = complete && /^\d{2}:\d{2}:\d{2}$/.test(pending.time);
+          complete = complete && Number.isFinite(latitude);
+          complete = complete && Number.isFinite(longitude);
+          complete = complete && Math.abs(latitude) <= 90;
+          complete = complete && Math.abs(longitude) <= 180;
+
+          if (complete) {
+            clockElement.textContent = pending.time;
+            latitudeElement.textContent = latitude.toFixed(6);
+            longitudeElement.textContent = longitude.toFixed(6);
+            gpsStatusElement.textContent = "GPS測位できています";
+          } else {
+            clearValues("データがそろっていません。次の更新を待っています");
+          }
         }
 
-        status.textContent = "接続する機器を選んでください";
+        pending = {
+          time: null,
+          latitude: null,
+          longitude: null
+        };
+      }
+    }
 
-const device = await navigator.bluetooth.requestDevice({
-  acceptAllDevices: true,
-  optionalServices: [serviceUuid]
-});
+    function onDisconnected(event) {
+      if (event.target !== currentDevice) {
+        return;
+      }
 
-        device.addEventListener("gattserverdisconnected", () => {
-          characteristic = null;
-          sendButton.disabled = true;
-          status.textContent = "切断されました。もう一度接続してください";
+      if (characteristic) {
+        characteristic.removeEventListener(
+          "characteristicvaluechanged",
+          receiveGps
+        );
+      }
+
+      characteristic = null;
+      currentDevice = null;
+      lastPacketAt = 0;
+      connectButton.disabled = false;
+      statusElement.textContent = "切断されました。もう一度接続してください";
+      clearValues("未接続です");
+    }
+
+    connectButton.addEventListener("click", async () => {
+      connectButton.disabled = true;
+      clearValues("接続を準備しています");
+
+      try {
+        if (!navigator.bluetooth) {
+          throw new Error("iPhoneのBluefyで開いてください");
+        }
+
+        statusElement.textContent = "ROADSTER-BLEを選んでください";
+
+        currentDevice = await navigator.bluetooth.requestDevice({
+          acceptAllDevices: true,
+          optionalServices: [serviceUuid]
         });
 
-        const server = await device.gatt.connect();
+        currentDevice.addEventListener(
+          "gattserverdisconnected",
+          onDisconnected
+        );
+
+        const server = await currentDevice.gatt.connect();
         const service = await server.getPrimaryService(serviceUuid);
         characteristic = await service.getCharacteristic(dataUuid);
 
-        sendButton.disabled = false;
-        status.textContent = "接続できました！";
+        characteristic.addEventListener(
+          "characteristicvaluechanged",
+          receiveGps
+        );
+
+        await characteristic.startNotifications();
+
+        lastPacketAt = Date.now();
+        statusElement.textContent = "接続できました！ GPS情報を受信します";
+        gpsStatusElement.textContent = "GPSデータ待ち";
       } catch (error) {
-status.textContent = "接続できませんでした：" + String(error?.message ?? error);
+        const message = String(error?.message ?? error);
+
+        if (currentDevice) {
+          currentDevice.removeEventListener(
+            "gattserverdisconnected",
+            onDisconnected
+          );
+
+          if (currentDevice.gatt.connected) {
+            currentDevice.gatt.disconnect();
+          }
+        }
+
+        if (characteristic) {
+          characteristic.removeEventListener(
+            "characteristicvaluechanged",
+            receiveGps
+          );
+        }
+
+        characteristic = null;
+        currentDevice = null;
+        lastPacketAt = 0;
+        connectButton.disabled = false;
+        statusElement.textContent = "接続できませんでした：" + message;
+        clearValues("未接続です");
       }
     });
 
-    sendButton.addEventListener("click", async () => {
-      try {
-        const text = document.getElementById("message").value;
-        const bytes = new TextEncoder().encode(text);
-
-        if (bytes.length === 0) {
-          throw new Error("文字を入力してください");
+    // 通信が止まったとき、古い値を現在の情報として残さない
+    setInterval(() => {
+      if (characteristic && lastPacketAt > 0) {
+        if (Date.now() - lastPacketAt > 4000) {
+          clearValues("データ更新が止まっています");
         }
-
-        if (bytes.length > 20) {
-          throw new Error("今回はUTF-8で20バイト以内にしてください");
-        }
-
-        sendButton.disabled = true;
-        await characteristic.writeValueWithResponse(bytes);
-        status.textContent = "送信しました：" + text;
-      } catch (error) {
-        status.textContent = "送信できませんでした：" + error.message;
-      } finally {
-        sendButton.disabled = characteristic === null;
       }
-    });
+    }, 1000);
   </script>
 </body>
 </html>
