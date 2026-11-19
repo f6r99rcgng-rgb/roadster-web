@@ -3,246 +3,954 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ROADSTER GPS</title>
+  <meta name="theme-color" content="#101418">
+  <title>ROADSTER GPS DASHBOARD</title>
+  <link
+ rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  >
   <style>
+    * {
+      box-sizing: border-box;
+    }
     body {
-      font-family: sans-serif;
-      max-width: 480px;
       margin: 0 auto;
-      padding: 24px;
-      background: #111;
-      color: #eee;
+      max-width: 900px;
+      padding: 16px;
+      background: #101418;
+      color: #eef5fa;
+      font-family: system-ui, sans-serif;
     }
-
+    h1 {
+      margin: 4px 0 16px;
+      font-size: 24px;
+    }
     button {
-      padding: 12px 20px;
-      font-size: 18px;
+      min-height: 48px;
+      padding: 10px 16px;
+      border: 0;
+      border-radius: 10px;
+      background: #305771;
+      color: #fff;
+      font-size: 16px;
+      cursor: pointer;
     }
-
+    button:disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+    }
     .card {
-      background: #222;
+      margin-top: 16px;
       padding: 18px;
-      margin-top: 18px;
-      border-radius: 12px;
+      background: #1d252d;
+      border-radius: 14px;
     }
-
-    .label {
-      color: #aaa;
+    .label, .note {
+      color: #b3c2cc;
       font-size: 14px;
+      line-height: 1.6;
     }
-
+    .numeric {
+      font-variant-numeric: tabular-nums;
+    }
+    #speed {
+      font-size: clamp(80px, 22vw, 150px);
+      font-weight: 750;
+      line-height: 1.1;
+      letter-spacing: -0.04em;
+      color: #7fffc8;
+      overflow-wrap: anywhere;
+    }
+    .unit {
+      font-size: 25px;
+      color: #c3d0d9;
+    }
+    .max-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 18px;
+    }
+    #maxSpeed {
+      font-size: 30px;
+    }
     #clock {
       font-size: 42px;
-      margin-top: 8px;
-      font-variant-numeric: tabular-nums;
+      margin-top: 6px;
     }
-
     .coordinate {
-      font-size: 24px;
-      margin: 8px 0 18px;
-      font-variant-numeric: tabular-nums;
+      font-size: 20px;
+      margin: 4px 0 12px;
+      overflow-wrap: anywhere;
     }
-
-    #status, #gpsStatus {
+    #address {
+      margin: 8px 0;
+      font-size: 23px;
+      line-height: 1.5;
+      overflow-wrap: anywhere;
+    }
+    #status, #gpsStatus, #wakeStatus {
       line-height: 1.6;
+    }
+    #map {
+      height: 350px;
+      margin-top: 12px;
+      background: #303a43;
+      border-radius: 10px;
+      color: #111;
+    }
+    #map.stale {
+      opacity: 0.55;
+    }
+    .layout {
+      display: grid;
+      gap: 0 16px;
+    }
+    @media (min-width: 720px) {
+      .layout {
+        grid-template-columns: 1fr 1fr;
+      }
+      .wide {
+        grid-column: 1 / -1;
+      }
+      #map {
+        height: 420px;
+      }
     }
   </style>
 </head>
 <body>
-  <h1>ROADSTER GPS</h1>
-  <button id="connect">ESP32に接続</button>
+  <h1>ROADSTER GPS DASHBOARD</h1>
+
+  <div class="controls">
+    <button id="connect">ESP32に接続</button>
+    <button id="disconnect" disabled>切断</button>
+    <button id="wake" aria-pressed="false">消灯防止：OFF</button>
+  </div>
   <p id="status">未接続です</p>
+  <div id="wakeStatus" class="note">消灯防止はOFFです</div>
 
-  <div class="card">
-    <div class="label">GPS時刻・日本時間（JST）</div>
-    <div id="clock">--:--:--</div>
-  </div>
+  <main class="layout">
+    <section class="card">
+      <div class="label">GPS車速</div>
+      <div id="speed" class="numeric">--.-</div>
+      <div class="unit">km/h</div>
+      <div class="max-row">
+        <div>
+          <span class="label">MAX </span>
+          <span id="maxSpeed" class="numeric">0.0</span>
+          <span> km/h</span>
+        </div>
+        <button id="resetMax">MAXリセット</button>
+      </div>
+      <p id="gpsStatus">GPSデータ待ち</p>
+    </section>
 
-  <div class="card">
-    <div class="label">緯度（度）</div>
-    <div id="latitude" class="coordinate">--</div>
+    <section class="card">
+      <div class="label">GPS時刻・日本時間（JST）</div>
+      <div id="clock" class="numeric">--:--:--</div>
 
-    <div class="label">経度（度）</div>
-    <div id="longitude" class="coordinate">--</div>
+      <div class="label">緯度（度）</div>
+      <div id="latitude" class="coordinate numeric">--</div>
+      <div class="label">経度（度）</div>
+      <div id="longitude" class="coordinate numeric">--</div>
+    </section>
 
-    <div id="gpsStatus">GPSデータ待ち</div>
-  </div>
+    <section class="card wide">
+      <div class="label">現在地の住所（市区町村・町域）</div>
+      <div id="address">GPS測位待ち</div>
+      <div id="addressStatus" class="note">住所は測位後に取得します</div>
+      <div class="note">
+       住所の出典：国土地理院
+ <a
+ href="https://maps.gsi.go.jp/"
+          target="_blank"
+          rel="noopener noreferrer"
+          style="color:#9bd8ff"
+        >地理院地図</a>
+      </div>
+    </section>
+
+    <section class="card wide">
+      <div class="controls">
+        <button id="follow" aria-pressed="true">自動追従：ON</button>
+        <button id="clearTrack">軌跡を消去</button>
+      </div>
+      <div id="map" class="stale"></div>
+      <p id="mapStatus" class="note">地図を読み込んでいます</p>
+    </section>
+  </main>
+
+  <p class="note">
+    GPS速度は参考表示です。運転中の操作はせず、停車中に設定してください。
+  </p>
 
   <script>
-    const serviceUuid = "12345678-1234-5678-1234-56789abcdef0";
+    "use strict";
+
+    // ===== 既存のBLE設定を維持 =====
+ const serviceUuid = "12345678-1234-5678-1234-56789abcdef0";
     const dataUuid = "12345678-1234-5678-1234-56789abcdef1";
 
-    const connectButton = document.getElementById("connect");
-    const statusElement = document.getElementById("status");
-    const clockElement = document.getElementById("clock");
-    const latitudeElement = document.getElementById("latitude");
-    const longitudeElement = document.getElementById("longitude");
-    const gpsStatusElement = document.getElementById("gpsStatus");
-
+    const el = (id) => document.getElementById(id);
     const decoder = new TextDecoder("utf-8");
+
+    // ===== 更新間隔・件数の設定 =====
+ const DATA_TIMEOUT_MS = 4000;
+    const ADDRESS_INTERVAL_MS = 60000;
+    const ADDRESS_DISTANCE_M = 300;
+    const ADDRESS_MIN_INTERVAL_MS = 30000;
+    const HTTP_TIMEOUT_MS = 10000;
+    const TRACK_DISTANCE_M = 5;
+    const TRACK_MAX_POINTS = 2000;
 
     let currentDevice = null;
     let characteristic = null;
+    let connectionEpoch = 0;
     let lastPacketAt = 0;
-    let pending = { time: null, latitude: null, longitude: null };
 
-    function clearValues(message) {
-      clockElement.textContent = "--:--:--";
-      latitudeElement.textContent = "--";
-      longitudeElement.textContent = "--";
-      gpsStatusElement.textContent = message;
+    const emptyPending = () => ({
+      time: null,
+      latitude: null,
+      longitude: null,
+      speed: null,
+      startedAt: 0
+ });
+
+    let pending = emptyPending();
+    let maxSpeed = 0;
+    let livePosition = null;
+    let positionEpoch = 0;
+
+    // ===== 地図・軌跡 =====
+ let map = null;
+    let marker = null;
+    let trackLine = null;
+    let follow = true;
+    let mapCentered = false;
+    let segments = [];
+    let trackPointCount = 0;
+    let lastTrackPosition = null;
+    let newTrackSegment = true;
+
+    // ===== 住所取得 =====
+ let lastAddressAttemptAt = 0;
+    let lastAddressAttemptPosition = null;
+    let lastAddressResult = null;
+    let addressBusy = false;
+    let addressController = null;
+    let addressFailures = 0;
+    let addressRetryAt = 0;
+    let municipalityPromise = null;
+
+    // ===== 消灯防止 =====
+ let wakeWanted = false;
+    let wakeLock = null;
+    let wakeBusy = false;
+
+    function distanceMeters(a, b) {
+      const radians = (degrees) => degrees * Math.PI / 180;
+      const dLat = radians(b.lat - a.lat);
+      const dLon = radians(b.lon - a.lon);
+      const h =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos(radians(a.lat)) *
+        Math.cos(radians(b.lat)) *
+        Math.sin(dLon / 2) ** 2;
+
+      return 6371000 * 2 * Math.atan2(
+        Math.sqrt(Math.min(1, h)),
+        Math.sqrt(Math.max(0, 1 - h))
+      );
     }
 
-    function receiveGps(event) {
+    function parseNumber(value) {
+      if (typeof value !== "string") {
+        return null;
+      }
+      // 空文字や「--」を0として扱いません。
+      if (!/^-?\d+(?:\.\d+)?$/.test(value)) {
+        return null;
+      }
+      const number = Number(value);
+      return Number.isFinite(number) ? number : null;
+    }
+
+    function clearValues(message) {
+      el("clock").textContent = "--:--:--";
+      el("latitude").textContent = "--";
+      el("longitude").textContent = "--";
+      el("speed").textContent = "--.-";
+      el("gpsStatus").textContent = message;
+
+      if (livePosition !== null) {
+        positionEpoch += 1;
+        if (addressController) {
+          addressController.abort();
+        }
+      }
+      livePosition = null;
+      newTrackSegment = true;
+      el("map").classList.add("stale");
+
+      el("address").textContent = lastAddressResult
+ ? lastAddressResult.text
+ : "GPS測位待ち";
+
+      el("addressStatus").textContent = lastAddressResult
+ ? "現在地は未確認です。住所は前回取得したものです"
+        : "有効なGPS座標を待っています";
+
+      if (map) {
+        el("mapStatus").textContent =
+          "現在地は未確認です。地図・マーカー・軌跡は過去の表示です";
+      }
+    }
+
+    // ===== T / A / O / V / S の受信 =====
+ function receiveGps(event) {
+      if (event.target !== characteristic) {
+        return;
+      }
+
       const message = decoder.decode(event.target.value).trim();
       const comma = message.indexOf(",");
-
       if (comma < 0) {
         return;
       }
 
       const type = message.slice(0, comma);
-      const value = message.slice(comma + 1);
+      const value = message.slice(comma + 1).trim();
 
       if (type === "T") {
-        pending = {
-          time: value,
-          latitude: null,
-          longitude: null
-        };
-      } else if (type === "A") {
+        pending = emptyPending();
+        pending.time = value;
+        pending.startedAt = Date.now();
+        return;
+      }
+
+      if (type === "A") {
         pending.latitude = value;
       } else if (type === "O") {
         pending.longitude = value;
+      } else if (type === "V") {
+        pending.speed = value;
       } else if (type === "S") {
+        if (value !== "FIX" && value !== "WAIT") {
+          return;
+        }
+
         lastPacketAt = Date.now();
+        const packet = pending;
+        pending = emptyPending();
 
         if (value === "WAIT") {
           clearValues("衛星を受信中です。空の見える場所で待ってください");
-        } else if (value === "FIX") {
-          const latitude = Number(pending.latitude);
-          const longitude = Number(pending.longitude);
-
-          let complete = pending.time !== null;
-          complete = complete && pending.latitude !== null;
-          complete = complete && pending.longitude !== null;
-          complete = complete && /^\d{2}:\d{2}:\d{2}$/.test(pending.time);
-          complete = complete && Number.isFinite(latitude);
-          complete = complete && Number.isFinite(longitude);
-          complete = complete && Math.abs(latitude) <= 90;
-          complete = complete && Math.abs(longitude) <= 180;
-
-          if (complete) {
-            clockElement.textContent = pending.time;
-            latitudeElement.textContent = latitude.toFixed(6);
-            longitudeElement.textContent = longitude.toFixed(6);
-            gpsStatusElement.textContent = "GPS測位できています";
-          } else {
-            clearValues("データがそろっていません。次の更新を待っています");
-          }
+          return;
         }
 
-        pending = {
-          time: null,
-          latitude: null,
-          longitude: null
-        };
+        const latitude = parseNumber(packet.latitude);
+        const longitude = parseNumber(packet.longitude);
+        const speed = parseNumber(packet.speed);
+
+        let complete = packet.time !== null;
+        complete = complete &&
+          /^(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(packet.time);
+        complete = complete && latitude !== null;
+        complete = complete && longitude !== null;
+        complete = complete && Math.abs(latitude) <= 90;
+        complete = complete && Math.abs(longitude) <= 180;
+        complete = complete && packet.startedAt > 0;
+        complete = complete &&
+          Date.now() - packet.startedAt <= DATA_TIMEOUT_MS;
+
+        if (!complete) {
+          clearValues("データがそろっていません。次の更新を待っています");
+          return;
+        }
+
+        el("clock").textContent = packet.time;
+        el("latitude").textContent = latitude.toFixed(6);
+        el("longitude").textContent = longitude.toFixed(6);
+
+        const speedValid = speed !== null && speed >= 0 && speed <= 2000;
+        if (speedValid) {
+          el("speed").textContent = speed.toFixed(1);
+          maxSpeed = Math.max(maxSpeed, speed);
+          el("maxSpeed").textContent = maxSpeed.toFixed(1);
+        } else {
+          el("speed").textContent = "--.-";
+        }
+
+        el("gpsStatus").textContent = speedValid
+ ? "GPS測位できています"
+          : "GPS測位できています・速度は不明です";
+
+        livePosition = { lat: latitude, lon: longitude };
+        el("map").classList.remove("stale");
+
+        // 住所の通信は待ちません。失敗してもBLE受信を続けます。
+        void maybeFetchAddress(livePosition);
       }
+    }
+
+    el("resetMax").addEventListener("click", () => {
+      maxSpeed = 0;
+      el("maxSpeed").textContent = "0.0";
+    });
+
+    // ===== BLEの後片付け =====
+ function cleanupBle() {
+      connectionEpoch += 1;
+
+      const device = currentDevice;
+      const dataCharacteristic = characteristic;
+
+      currentDevice = null;
+      characteristic = null;
+      pending = emptyPending();
+      lastPacketAt = 0;
+
+      if (dataCharacteristic) {
+        dataCharacteristic.removeEventListener(
+          "characteristicvaluechanged",
+          receiveGps
+ );
+      }
+      if (device) {
+        device.removeEventListener(
+          "gattserverdisconnected",
+          onDisconnected
+ );
+        try {
+          if (device.gatt.connected) {
+            device.gatt.disconnect();
+          }
+        } catch (error) {
+          console.warn("BLE切断処理:", error);
+        }
+      }
+
+      el("connect").disabled = false;
+      el("disconnect").disabled = true;
     }
 
     function onDisconnected(event) {
       if (event.target !== currentDevice) {
         return;
       }
-
-      if (characteristic) {
-        characteristic.removeEventListener(
-          "characteristicvaluechanged",
-          receiveGps
-        );
-      }
-
-      characteristic = null;
-      currentDevice = null;
-      lastPacketAt = 0;
-      connectButton.disabled = false;
-      statusElement.textContent = "切断されました。もう一度接続してください";
+      cleanupBle();
       clearValues("未接続です");
+      el("status").textContent =
+        "切断されました。もう一度「ESP32に接続」を押してください";
     }
 
-    connectButton.addEventListener("click", async () => {
-      connectButton.disabled = true;
+    el("connect").addEventListener("click", async () => {
+      el("connect").disabled = true;
       clearValues("接続を準備しています");
+      pending = emptyPending();
+      const epoch = ++connectionEpoch;
+      let selectedDevice = null;
 
       try {
         if (!navigator.bluetooth) {
-          throw new Error("iPhoneのBluefyで開いてください");
+          throw new Error(
+            "Web Bluetooth非対応です。iPhoneではBluefyで開いてください"
+          );
         }
 
-        statusElement.textContent = "ROADSTER-BLEを選んでください";
+        el("status").textContent = "ROADSTER-BLEを選んでください";
 
-        currentDevice = await navigator.bluetooth.requestDevice({
+        // 成功した「名前で絞り込まない検索」を維持します。
+        selectedDevice = await navigator.bluetooth.requestDevice({
           acceptAllDevices: true,
           optionalServices: [serviceUuid]
         });
 
+        if (epoch !== connectionEpoch) {
+          return;
+        }
+
+        currentDevice = selectedDevice;
         currentDevice.addEventListener(
           "gattserverdisconnected",
           onDisconnected
-        );
+ );
 
-        const server = await currentDevice.gatt.connect();
+        const server = await selectedDevice.gatt.connect();
         const service = await server.getPrimaryService(serviceUuid);
-        characteristic = await service.getCharacteristic(dataUuid);
+        const dataCharacteristic = await service.getCharacteristic(dataUuid);
 
+        if (epoch !== connectionEpoch) {
+          if (selectedDevice.gatt.connected) {
+            selectedDevice.gatt.disconnect();
+          }
+          return;
+        }
+
+        characteristic = dataCharacteristic;
         characteristic.addEventListener(
           "characteristicvaluechanged",
           receiveGps
-        );
-
+ );
         await characteristic.startNotifications();
 
+        if (epoch !== connectionEpoch) {
+          return;
+        }
+
         lastPacketAt = Date.now();
-        statusElement.textContent = "接続できました！ GPS情報を受信します";
-        gpsStatusElement.textContent = "GPSデータ待ち";
+        el("disconnect").disabled = false;
+        el("status").textContent = "接続できました！ GPS情報を受信します";
+        void acquireWakeLock();
       } catch (error) {
-        const message = String(error?.message ?? error);
-
-        if (currentDevice) {
-          currentDevice.removeEventListener(
-            "gattserverdisconnected",
-            onDisconnected
-          );
-
-          if (currentDevice.gatt.connected) {
-            currentDevice.gatt.disconnect();
-          }
+        if (epoch !== connectionEpoch) {
+          return;
         }
-
-        if (characteristic) {
-          characteristic.removeEventListener(
-            "characteristicvaluechanged",
-            receiveGps
-          );
-        }
-
-        characteristic = null;
-        currentDevice = null;
-        lastPacketAt = 0;
-        connectButton.disabled = false;
-        statusElement.textContent = "接続できませんでした：" + message;
+        cleanupBle();
         clearValues("未接続です");
+        el("status").textContent =
+          "接続できませんでした：" + String(error?.message ?? error);
       }
     });
 
-    // 通信が止まったとき、古い値を現在の情報として残さない
+    el("disconnect").addEventListener("click", () => {
+      cleanupBle();
+      clearValues("未接続です");
+      el("status").textContent =
+        "切断しました。再接続するには「ESP32に接続」を押してください";
+    });
+
+    // ===== Screen Wake Lock =====
+ async function acquireWakeLock() {
+      if (!wakeWanted) {
+        return;
+      }
+      if (document.visibilityState !== "visible") {
+        return;
+      }
+      if (wakeLock !== null) {
+        return;
+      }
+      if (wakeBusy) {
+        return;
+      }
+      if (!navigator.wakeLock) {
+        el("wakeStatus").textContent =
+          "このブラウザーは消灯防止APIに対応していません";
+        return;
+      }
+
+      wakeBusy = true;
+      try {
+        const lock = await navigator.wakeLock.request("screen");
+
+        if (!wakeWanted || document.visibilityState !== "visible") {
+          await lock.release();
+          return;
+        }
+
+        wakeLock = lock;
+        el("wakeStatus").textContent = "消灯防止を取得しました";
+
+        lock.addEventListener("release", () => {
+          if (wakeLock === lock) {
+            wakeLock = null;
+            el("wakeStatus").textContent = wakeWanted
+ ? "消灯防止が解除されました。ボタンでOFF→ONにすると再試行できます"
+              : "消灯防止はOFFです";
+          }
+        });
+      } catch (error) {
+        el("wakeStatus").textContent =
+          "消灯防止を取得できません：" + String(error?.message ?? error);
+      } finally {
+        wakeBusy = false;
+      }
+    }
+
+    el("wake").addEventListener("click", async () => {
+      wakeWanted = !wakeWanted;
+      el("wake").textContent = wakeWanted
+ ? "消灯防止：ON"
+        : "消灯防止：OFF";
+      el("wake").setAttribute("aria-pressed", String(wakeWanted));
+
+      if (wakeWanted) {
+        await acquireWakeLock();
+      } else {
+        const lock = wakeLock;
+        wakeLock = null;
+        if (lock) {
+          try {
+            await lock.release();
+          } catch (error) {
+            console.warn("Wake Lock解除:", error);
+          }
+        }
+        el("wakeStatus").textContent = "消灯防止はOFFです";
+      }
+    });
+
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") {
+        if (lastPacketAt > 0 && Date.now() - lastPacketAt > DATA_TIMEOUT_MS) {
+          pending = emptyPending();
+          clearValues("データ更新が止まっています");
+        }
+        void acquireWakeLock();
+      }
+    });
+
+    // ===== 外部スクリプトを非同期で読み込む =====
+ function loadScript(url) {
+      return new Promise((resolve, reject) => {
+        const script = document.createElement("script");
+        script.src = url;
+        script.async = true;
+
+        const timer = setTimeout(() => {
+          script.remove();
+          reject(new Error("外部ライブラリーの読み込みがタイムアウトしました"));
+        }, HTTP_TIMEOUT_MS);
+
+        script.onload = () => {
+          clearTimeout(timer);
+          resolve();
+        };
+        script.onerror = () => {
+          clearTimeout(timer);
+          script.remove();
+          reject(new Error("外部ライブラリーを読み込めませんでした"));
+        };
+
+        document.head.appendChild(script);
+      });
+    }
+
+    async function getMunicipalities() {
+      if (!municipalityPromise) {
+        municipalityPromise = loadScript(
+          "https://maps.gsi.go.jp/js/muni.js"
+        ).then(() => {
+          const municipalities = window.GSI?.MUNI_ARRAY;
+          if (!municipalities) {
+            throw new Error("市区町村一覧を取得できませんでした");
+          }
+          return municipalities;
+        }).catch((error) => {
+          municipalityPromise = null;
+          throw error;
+        });
+      }
+      return municipalityPromise;
+    }
+
+    // ===== 国土地理院：座標から住所を取得 =====
+ async function maybeFetchAddress(position) {
+      if (addressBusy) {
+        return;
+      }
+
+      const now = Date.now();
+      if (now < addressRetryAt) {
+        return;
+      }
+
+      if (lastAddressAttemptAt > 0) {
+        const elapsed = now - lastAddressAttemptAt;
+        if (elapsed < ADDRESS_MIN_INTERVAL_MS) {
+          return;
+        }
+
+        const moved = lastAddressAttemptPosition
+ ? distanceMeters(lastAddressAttemptPosition, position)
+          : Infinity;
+
+        // 60秒経過 または 300m移動。ただし最低30秒間隔。
+        if (elapsed < ADDRESS_INTERVAL_MS && moved < ADDRESS_DISTANCE_M) {
+          return;
+        }
+      }
+
+      addressBusy = true;
+      lastAddressAttemptAt = now;
+      lastAddressAttemptPosition = { ...position };
+      const epoch = positionEpoch;
+      const controller = new AbortController();
+      addressController = controller;
+      const timer = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MS);
+
+      el("addressStatus").textContent = lastAddressResult
+ ? "住所を更新中です。表示中の住所は前回取得したものです"
+        : "住所を取得しています";
+
+      try {
+        const url = new URL(
+          "https://mreversegeocoder.gsi.go.jp/reverse-geocoder/LonLatToAddress"
+        );
+        url.searchParams.set("lat", position.lat.toFixed(6));
+        url.searchParams.set("lon", position.lon.toFixed(6));
+
+        const response = await fetch(url, {
+          signal: controller.signal,
+          credentials: "omit"
+        });
+
+        if (!response.ok) {
+          throw new Error("住所APIのHTTPエラー " + response.status);
+        }
+
+        const data = await response.json();
+        const result = data.results;
+        if (!result?.muniCd) {
+          throw new Error("この地点の住所が見つかりませんでした");
+        }
+
+        const municipalities = await getMunicipalities();
+        const code = String(result.muniCd).padStart(5, "0");
+        let entry = municipalities[code];
+        if (!entry) {
+          entry = municipalities[String(Number(code))];
+        }
+        if (!entry) {
+          throw new Error("市区町村コードを住所に変換できませんでした");
+        }
+
+        const fields = String(entry).split(",");
+        if (fields.length < 4) {
+          throw new Error("市区町村データの形式が想定と異なります");
+        }
+
+        if (epoch !== positionEpoch || livePosition === null) {
+          return;
+        }
+
+        const text = fields[1] + fields[3] + String(result.lv01Nm ?? "");
+        lastAddressResult = {
+          text,
+          position: { ...position },
+          fetchedAt: Date.now()
+        };
+
+        addressFailures = 0;
+        addressRetryAt = 0;
+        el("address").textContent = text;
+        updateAddressStatus();
+      } catch (error) {
+        if (epoch !== positionEpoch || livePosition === null) {
+          return;
+        }
+
+        addressFailures += 1;
+        const retryDelay = Math.min(
+         300000,
+          ADDRESS_MIN_INTERVAL_MS * 2 ** Math.min(addressFailures - 1, 4)
+        );
+        addressRetryAt = Date.now() + retryDelay;
+
+        el("addressStatus").textContent =
+          "住所を取得できません。約" +
+          Math.round(retryDelay / 1000) +
+          "秒後から再試行します。" +
+          (lastAddressResult ? " 表示中の住所は前回取得したものです。" : "");
+
+        console.warn("住所取得:", error);
+      } finally {
+        clearTimeout(timer);
+        if (addressController === controller) {
+          addressController = null;
+        }
+        addressBusy = false;
+      }
+    }
+
+    function updateAddressStatus() {
+      if (!lastAddressResult || !livePosition) {
+        return;
+      }
+      if (addressBusy || addressFailures > 0) {
+        return;
+      }
+
+      const seconds = Math.max(
+       0,
+        Math.floor((Date.now() - lastAddressResult.fetchedAt) / 1000)
+      );
+      const meters = Math.round(
+        distanceMeters(lastAddressResult.position, livePosition)
+      );
+
+      el("addressStatus").textContent =
+        "取得：" + seconds + "秒前・取得地点から約" + meters +
+        "m。番地・建物名は含みません";
+    }
+
+    // ===== Leaflet＋地理院地図 =====
+ async function initializeMap() {
+      try {
+        await loadScript(
+          "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        );
+
+        map = L.map("map").setView([36, 138], 5);
+
+        const tiles = L.tileLayer(
+          "https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png",
+          {
+            minZoom: 2,
+            maxZoom: 18,
+            attribution:
+              '<a href="https://maps.gsi.go.jp/development/ichiran.html" ' +
+              'target="_blank" rel="noopener noreferrer">' +
+              "地理院タイル</a>"
+          }
+        ).addTo(map);
+
+        tiles.on("tileerror", () => {
+          el("mapStatus").textContent =
+            "地図タイルを読み込めません。インターネット接続を確認してください";
+        });
+
+        trackLine = L.polyline([], {
+          color: "#ff6b45",
+          weight: 4,
+          opacity: 0.9
+ }).addTo(map);
+
+        el("mapStatus").textContent = "地図の準備ができました。GPS測位待ち";
+        updateMap();
+      } catch (error) {
+        el("mapStatus").textContent =
+          "地図を読み込めません。GPS・速度・BLE受信は継続します";
+        console.warn("地図読み込み:", error);
+      }
+    }
+
+    function addTrackPoint(position) {
+      if (!newTrackSegment && lastTrackPosition) {
+        if (distanceMeters(lastTrackPosition, position) < TRACK_DISTANCE_M) {
+          return;
+        }
+      }
+
+      const point = [position.lat, position.lon];
+      if (newTrackSegment || segments.length === 0) {
+        segments.push([]);
+        newTrackSegment = false;
+      }
+
+      segments[segments.length - 1].push(point);
+      trackPointCount += 1;
+      lastTrackPosition = { ...position };
+
+      // メモリーを使い続けないよう、古い点から削除します。
+      while (trackPointCount > TRACK_MAX_POINTS) {
+        segments[0].shift();
+        trackPointCount -= 1;
+        if (segments[0].length === 0) {
+          segments.shift();
+        }
+      }
+
+      trackLine.setLatLngs(segments);
+    }
+
+    function updateMap() {
+      if (!map || !livePosition) {
+        return;
+      }
+
+      const position = livePosition;
+      const point = [position.lat, position.lon];
+
+      if (!marker) {
+        marker = L.circleMarker(point, {
+          radius: 9,
+          color: "#fff",
+          weight: 3,
+          fillColor: "#007bff",
+          fillOpacity: 1
+ }).addTo(map);
+        marker.bindTooltip("ESP32 GPSの現在地");
+      } else {
+        marker.setLatLng(point);
+      }
+
+      addTrackPoint(position);
+
+      if (follow) {
+        if (!mapCentered) {
+          map.setView(point, 16, { animate: false });
+        } else {
+          map.panTo(point, { animate: false });
+        }
+      }
+      mapCentered = true;
+
+      el("mapStatus").textContent =
+        "ESP32 GPSの現在地・軌跡 " + trackPointCount +
+        "点。未測位・切断区間は線でつなぎません";
+    }
+
+    el("follow").addEventListener("click", () => {
+      follow = !follow;
+      el("follow").textContent = follow ? "自動追従：ON" : "自動追従：OFF";
+      el("follow").setAttribute("aria-pressed", String(follow));
+      updateMap();
+    });
+
+    el("clearTrack").addEventListener("click", () => {
+      segments = [];
+      trackPointCount = 0;
+      lastTrackPosition = null;
+      newTrackSegment = true;
+      if (trackLine) {
+        trackLine.setLatLngs([]);
+      }
+      updateMap();
+    });
+
+    // 地図は約1秒ごと。住所通信や地図エラーをBLEから分離します。
     setInterval(() => {
       if (characteristic && lastPacketAt > 0) {
-        if (Date.now() - lastPacketAt > 4000) {
+        if (Date.now() - lastPacketAt > DATA_TIMEOUT_MS) {
+          pending = emptyPending();
           clearValues("データ更新が止まっています");
         }
       }
+
+      try {
+        updateMap();
+      } catch (error) {
+        el("mapStatus").textContent = "地図更新に失敗しました";
+        console.warn("地図更新:", error);
+      }
+
+      updateAddressStatus();
     }, 1000);
+
+    window.addEventListener("pagehide", () => {
+      if (addressController) {
+        addressController.abort();
+      }
+    });
+
+    if (!navigator.wakeLock) {
+      el("wakeStatus").textContent =
+        "このブラウザーは消灯防止APIに対応していません。端末側の設定が必要です";
+    }
+
+    // 読み込み完了を待たずにBLE接続ボタンを使えます。
+    void initializeMap();
   </script>
 </body>
 </html>
