@@ -454,6 +454,193 @@
         font-size: 10px;
       }
     }
+    /* 横向きでブラウザーが文字を自動拡大するのを抑えます。 */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+.main-grid {
+  grid-template-columns: minmax(0, 30fr) minmax(0, 70fr);
+}
+
+.speed-panel {
+  justify-content: flex-start;
+  gap: 4px;
+  padding: 7px 9px;
+}
+
+.speed-line {
+  display: flex;
+  justify-content: center;
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
+}
+
+#speed {
+  font-size: clamp(29px, min(7.2vw, 16.2vh), 84px);
+}
+
+.speed-line .unit {
+  flex-shrink: 0;
+  font-size: 13px;
+}
+
+.max-row {
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 0;
+  font-size: 11px;
+}
+
+#maxSpeed {
+  font-size: 19px;
+}
+
+#resetMax {
+  align-self: auto;
+  min-height: 24px;
+  margin-left: 3px;
+  padding: 2px 6px;
+  font-size: 9px;
+}
+
+.dashboard-clock {
+  display: flex;
+  justify-content: center;
+  align-items: baseline;
+  gap: 6px;
+  margin-top: 3px;
+  white-space: nowrap;
+}
+
+.dashboard-clock span:first-child {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+#clock {
+  font-size: clamp(19px, 5.5vh, 28px);
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.acceleration {
+  flex-shrink: 0;
+  width: 100%;
+  gap: 5px;
+  margin-top: 0;
+  padding-top: 5px;
+  font-size: 14px;
+  line-height: 1.25;
+}
+
+.acceleration-row {
+  align-items: baseline;
+  gap: 5px;
+}
+
+.acceleration-row > span {
+  white-space: nowrap;
+}
+
+.acceleration-row strong {
+  font-size: 15px;
+  white-space: nowrap;
+}
+
+.panel-messages {
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: 52px;
+  margin-top: auto;
+  padding-top: 4px;
+  overflow: auto;
+  border-top: 1px solid #35434f;
+  text-align: left;
+  font-size: 10px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.panel-messages > div + div {
+  margin-top: 3px;
+}
+
+.information {
+  gap: 0;
+  padding: 3px 7px;
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+.information-row {
+  gap: 2px 10px;
+}
+
+@media (orientation: portrait) {
+  .main-grid {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(230px, 42fr) minmax(0, 58fr);
+  }
+
+  #speed {
+    font-size: clamp(35px, 12vw, 66px);
+  }
+
+  .acceleration {
+    width: min(290px, 100%);
+    align-self: center;
+  }
+
+  .panel-messages {
+    width: 100%;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 430px) {
+  .speed-panel {
+    gap: 3px;
+    padding: 4px 8px;
+  }
+
+  #speed {
+    font-size: clamp(25px, min(6.6vw, 13.8vh), 54px);
+  }
+
+  .speed-line .unit {
+    font-size: 12px;
+  }
+
+  #maxSpeed {
+    font-size: 17px;
+  }
+
+  #clock {
+    font-size: clamp(18px, 5.5vh, 23px);
+  }
+
+  .acceleration {
+    gap: 4px;
+    padding-top: 4px;
+    font-size: 13px;
+  }
+
+  .acceleration-row strong {
+    font-size: 14px;
+  }
+
+  .information {
+    padding: 3px 7px;
+    font-size: 9px;
+  }
+
+  .panel-messages {
+    max-height: 40px;
+    font-size: 9px;
+  }
+}
   </style>
 </head>
 <body>
@@ -1202,7 +1389,9 @@
           "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
         );
 
-        map = L.map("map").setView([36, 138], 5);
+        map = L.map("map", {
+          trackResize: false
+        }).setView([36, 138], 5);
 
         const tiles = L.tileLayer(
           "https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png",
@@ -1353,5 +1542,186 @@
     // 読み込み完了を待たずにBLE接続ボタンを使えます。
     void initializeMap();
   </script>
+
+<script>
+"use strict";
+
+(() => {
+  const root = document.documentElement;
+  const overlay = document.getElementById("detailsOverlay");
+  const openButton = document.getElementById("openDetails");
+  const closeButton = document.getElementById("closeDetails");
+  const dialog = overlay.querySelector(".details-card");
+  const status = document.getElementById("status");
+  const connectionDetail = document.getElementById("connectionDetail");
+
+  // 速度と単位を横並びにします。
+  const speedPanel = document.querySelector(".speed-panel");
+  const speedElement = document.getElementById("speed");
+  const unitElement = speedPanel.querySelector(".unit");
+  const speedLine = document.createElement("div");
+
+  speedLine.className = "speed-line";
+  speedElement.before(speedLine);
+  speedLine.append(speedElement, unitElement);
+
+  // MAXとリセットを同じ行にまとめます。
+  speedPanel.querySelector(".max-row").append(
+    document.getElementById("resetMax")
+  );
+
+  // GPS時計を左側パネルへ移します。
+  const clockItem = document.getElementById("clock").closest(
+    ".information-item"
+  );
+
+  clockItem.classList.add("dashboard-clock");
+  speedPanel.querySelector(".acceleration").before(clockItem);
+
+  // 住所取得・地図の説明を左側の空きスペースへ移します。
+  const messages = document.createElement("div");
+  messages.className = "panel-messages";
+  messages.setAttribute("aria-label", "住所と地図の更新状況");
+
+  messages.append(
+    document.getElementById("addressStatus"),
+    document.getElementById("mapStatus")
+  );
+
+  speedPanel.append(messages);
+
+  let resizeFrame = 0;
+  let resizeTimer = 0;
+
+  function adjustMapSize() {
+    if (typeof map === "undefined") {
+      return;
+    }
+
+    if (!map) {
+      return;
+    }
+
+    map.stop();
+
+    // サイズ変更後も、見ていた中心位置を維持します。
+    map.invalidateSize({
+      animate: false,
+      pan: true,
+      debounceMoveend: true
+    });
+
+    // 自動追従ONなら、最新のGPS位置を中央へ戻します。
+    if (follow && livePosition) {
+      map.setView(
+        [livePosition.lat, livePosition.lon],
+        map.getZoom(),
+        { animate: false }
+      );
+    }
+  }
+
+  function updateViewport() {
+    cancelAnimationFrame(resizeFrame);
+    clearTimeout(resizeTimer);
+
+    resizeFrame = requestAnimationFrame(() => {
+      const viewport = window.visualViewport;
+      const height = viewport
+        ? viewport.height
+        : window.innerHeight;
+
+      const nextHeight = Math.floor(height) + "px";
+
+      if (root.style.getPropertyValue("--app-height") !== nextHeight) {
+        root.style.setProperty("--app-height", nextHeight);
+      }
+
+      // 配置変更が反映された次のフレームで地図を補正します。
+      resizeFrame = requestAnimationFrame(() => {
+        adjustMapSize();
+
+        // 回転やブラウザーの操作帯の変化が落ち着いてから再確認。
+        resizeTimer = setTimeout(adjustMapSize, 250);
+      });
+    });
+  }
+
+  function synchronizeStatus() {
+    connectionDetail.textContent = status.textContent;
+    status.title = status.textContent;
+  }
+
+  function openDetails() {
+    synchronizeStatus();
+    overlay.hidden = false;
+    openButton.setAttribute("aria-expanded", "true");
+    closeButton.focus();
+  }
+
+  function closeDetails() {
+    overlay.hidden = true;
+    openButton.setAttribute("aria-expanded", "false");
+    openButton.focus();
+  }
+
+  openButton.addEventListener("click", openDetails);
+  closeButton.addEventListener("click", closeDetails);
+
+  overlay.addEventListener("click", (event) => {
+    if (event.target === overlay) {
+      closeDetails();
+    }
+  });
+
+  overlay.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeDetails();
+      return;
+    }
+
+    if (event.key !== "Tab") {
+      return;
+    }
+
+    const focusable = Array.from(
+      dialog.querySelectorAll("button, a[href]")
+    ).filter((element) => !element.disabled);
+
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  });
+
+  new MutationObserver(synchronizeStatus).observe(status, {
+    childList: true,
+    characterData: true,
+    subtree: true
+  });
+
+  window.addEventListener("resize", updateViewport);
+  window.addEventListener("orientationchange", updateViewport);
+
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", updateViewport);
+  }
+
+  if (typeof ResizeObserver !== "undefined") {
+    const observer = new ResizeObserver(updateViewport);
+    observer.observe(document.getElementById("map"));
+  }
+
+  synchronizeStatus();
+  updateViewport();
+})();
+</script>
 </body>
 </html>
