@@ -641,6 +641,98 @@ html {
     font-size: 9px;
   }
 }
+/* 横画面：既存の左30％・右70％を維持します。 */
+.main-grid {
+  grid-template-columns: minmax(0, 30fr) minmax(0, 70fr);
+  grid-template-rows: minmax(0, 1fr);
+}
+
+/* 右側を「注釈文 → 時計 → 地図」の3段にします。 */
+.map-column {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: var(--gap);
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* 注釈文は速度カードの外へ移し、長い場合は欄内でスクロール。 */
+.map-column > .panel-messages {
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  max-height: 52px;
+  margin: 0;
+  padding: 3px 6px;
+  border: 0;
+  overflow: auto;
+  text-align: left;
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+/* 時計は地図に重ねず、独立した帯として表示します。 */
+.map-column > .dashboard-clock {
+  display: flex;
+  justify-content: center;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: var(--panel);
+  white-space: nowrap;
+}
+
+.map-column > .dashboard-clock span:first-child {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.map-column #clock {
+  margin: 0;
+  font-size: clamp(19px, 5.5vh, 28px);
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+/* 地図は右側カラムの残りの高さを使用します。 */
+.map-column > .map-panel {
+  min-width: 0;
+  min-height: 0;
+}
+
+/* 縦画面：速度カードの下に、注釈文・時計・地図を並べます。 */
+@media (orientation: portrait) {
+  .main-grid {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .speed-panel {
+    justify-content: flex-start;
+  }
+}
+
+/* 高さの小さい横画面では、補助表示をコンパクトにします。 */
+@media (orientation: landscape) and (max-height: 430px) {
+  .map-column > .panel-messages {
+    max-height: 40px;
+    padding: 2px 5px;
+    font-size: 9px;
+  }
+
+  .map-column > .dashboard-clock {
+    padding: 2px 8px;
+  }
+
+  .map-column #clock {
+    font-size: clamp(18px, 5.5vh, 23px);
+  }
+}
   </style>
 </head>
 <body>
@@ -1587,15 +1679,14 @@ html {
     document.getElementById("resetMax")
   );
 
-  // GPS時計を左側パネルへ移します。
+  // 既存の時計要素をそのまま使用します。
   const clockItem = document.getElementById("clock").closest(
     ".information-item"
   );
 
   clockItem.classList.add("dashboard-clock");
-  speedPanel.querySelector(".acceleration").before(clockItem);
 
-  // 住所取得・地図の説明を左側の空きスペースへ移します。
+  // 住所取得・地図の注釈文も、既存の要素をそのまま移動します。
   const messages = document.createElement("div");
   messages.className = "panel-messages";
   messages.setAttribute("aria-label", "住所と地図の更新状況");
@@ -1605,8 +1696,15 @@ html {
     document.getElementById("mapStatus")
   );
 
-  speedPanel.append(messages);
+  // 注釈文・時計・地図をまとめる右側カラムを作ります。
+  const mapPanel = document.querySelector(".map-panel");
+  const mapColumn = document.createElement("div");
 
+  mapColumn.className = "map-column";
+  mapPanel.before(mapColumn);
+
+  // 縦横とも、時計は必ず地図の直前に配置します。
+  mapColumn.append(messages, clockItem, mapPanel);
   let resizeFrame = 0;
   let resizeTimer = 0;
 
