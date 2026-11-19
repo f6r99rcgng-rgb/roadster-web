@@ -973,10 +973,12 @@ html {
         未測位・通信停止・切断時の住所や地図は、過去の情報です。
       </p>
 
-      <p>
-        0–60／0–100 km/hは表示欄のみで、
-        この版では時間を計測しません。
-      </p>
+     <p>
+        0–60／0–100 km/hはESP32側でGPS速度から推定した結果です。
+        発進時刻・到達時刻には測位や受信処理による誤差があります。
+        新しい計測が始まるまでは前回の結果を表示します。
+        未接続・通信停止中の結果は過去の情報です。
+     </p>
 
       <p>
         MAXと軌跡はページ再読み込みで消えます。
@@ -1004,6 +1006,11 @@ html {
     // ===== 既存のBLE設定を維持 =====
  const serviceUuid = "12345678-1234-5678-1234-56789abcdef0";
     const dataUuid = "12345678-1234-5678-1234-56789abcdef1";
+    const addressUuid = "12345678-1234-5678-1234-56789abcdef2";
+    const encoder = new TextEncoder();
+
+    let addressCharacteristic = null;
+    let addressSending = false;
 
     const el = (id) => document.getElementById(id);
     const decoder = new TextDecoder("utf-8");
@@ -1134,7 +1141,30 @@ html {
 
       const type = message.slice(0, comma);
       const value = message.slice(comma + 1).trim();
+// 加速結果はGPSの組み立て処理から独立して受信します。
+if (type === "R60") {
+  const seconds = parseNumber(value);
 
+  if (seconds !== null && seconds >= 0 && seconds <= 60) {
+    el("accel60").textContent = seconds.toFixed(2) + " 秒";
+  } else {
+    el("accel60").textContent = "未計測";
+  }
+
+  return;
+}
+
+if (type === "R100") {
+  const seconds = parseNumber(value);
+
+  if (seconds !== null && seconds >= 0 && seconds <= 60) {
+    el("accel100").textContent = seconds.toFixed(2) + " 秒";
+  } else {
+    el("accel100").textContent = "未計測";
+  }
+
+  return;
+}
       if (type === "T") {
         pending = emptyPending();
         pending.time = value;
@@ -1221,6 +1251,7 @@ html {
 
       currentDevice = null;
       characteristic = null;
+      addressCharacteristic = null;
       pending = emptyPending();
       lastPacketAt = 0;
 
@@ -1307,6 +1338,20 @@ html {
           receiveGps
  );
         await characteristic.startNotifications();
+        // 住所の受信口がなくても、GPS受信は継続します。
+try {
+  const writable = await service.getCharacteristic(addressUuid);
+
+  if (epoch === connectionEpoch) {
+    addressCharacteristic = writable;
+  }
+} catch (error) {
+  if (epoch === connectionEpoch) {
+    addressCharacteristic = null;
+  }
+
+  console.warn("住所送信の受信口を取得できません:", error);
+}
 
         if (epoch !== connectionEpoch) {
           return;
@@ -1474,6 +1519,78 @@ html {
      return municipalityPromise;
     }
 
+    async function sendAddressToEsp32(text, sourcePositionEpoch) {
+  const target = addressCharacteristic;
+  const device = currentDevice;
+  const epoch = connectionEpoch;
+
+  if (!target || !device?.gatt?.connected) {
+    return;
+  }
+
+  if (addressSending) {
+    return;
+  }
+
+  const bytes = encoder.encode(text);
+
+  if (bytes.length === 0 || bytes.length > 512) {
+    console.warn("住所送信: 住所のサイズが範囲外です");
+    return;
+  }
+
+  addressSending = true;
+
+  async function writePacket(packet) {
+    if (epoch !== connectionEpoch) {
+      throw new Error("住所送信中に接続が変更されました");
+    }
+
+    if (target !== addressCharacteristic) {
+      throw new Error("住所の送信先が変更されました");
+    }
+
+    if (!device.gatt.connected) {
+      throw new Error("住所送信中に切断されました");
+    }
+
+    if (sourcePositionEpoch !== positionEpoch) {
+      throw new Error("住所送信中にGPS位置が無効になりました");
+    }
+
+    if (livePosition === null) {
+      throw new Error("現在地が確認できません");
+    }
+
+    await target.writeValueWithResponse(packet);
+  }
+
+  try {
+    // B = 開始
+    await writePacket(new Uint8Array([66]));
+
+    // D + 最大19バイト = 1回あたり最大20バイト
+    for (let offset = 0; offset < bytes.length; offset += 19) {
+      const chunk = bytes.slice(offset, offset + 19);
+      const packet = new Uint8Array(chunk.length + 1);
+
+      packet[0] = 68;
+      packet.set(chunk, 1);
+
+      await writePacket(packet);
+    }
+
+    // E = 完了
+    await writePacket(new Uint8Array([69]));
+
+    console.info("住所をESP32へ送信しました:", text);
+  } catch (error) {
+    // 住所のBLE送信失敗で、Webの住所表示を失敗扱いにしません。
+    console.warn("住所のBLE送信:", error);
+  } finally {
+    addressSending = false;
+  }
+}
     // ===== 国土地理院：座標から住所を取得 =====
  async function maybeFetchAddress(position) {
       if (addressBusy) {
@@ -1561,10 +1678,14 @@ html {
           fetchedAt: Date.now()
         };
 
-        addressFailures = 0;
-        addressRetryAt = 0;
-        el("address").textContent = text;
-        updateAddressStatus();
+addressFailures = 0;
+addressRetryAt = 0;
+el("address").textContent = text;
+updateAddressStatus();
+
+// スマホに表示した住所をESP32にも送ります。
+// BLE送信を待たず、既存の処理を継続します。
+void sendAddressToEsp32(text, epoch);
       } catch (error) {
         if (epoch !== positionEpoch || livePosition === null) {
           return;
