@@ -2,197 +2,598 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1, viewport-fit=cover"
+  >
   <meta name="theme-color" content="#101418">
   <title>ROADSTER GPS DASHBOARD</title>
   <link
- rel="stylesheet"
+    rel="stylesheet"
     href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
   >
   <style>
+    :root {
+      color-scheme: dark;
+      --app-height: 100vh;
+      --background: #101418;
+      --panel: #1c252e;
+      --muted: #adc0cd;
+      --accent: #7fffc8;
+      --gap: 6px;
+    }
+
+    @supports (height: 100dvh) {
+      :root {
+        --app-height: 100dvh;
+      }
+    }
+
     * {
       box-sizing: border-box;
     }
+
+    html,
     body {
-      margin: 0 auto;
-      max-width: 900px;
-      padding: 16px;
-      background: #101418;
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      background: var(--background);
       color: #eef5fa;
       font-family: system-ui, sans-serif;
     }
-    h1 {
-      margin: 4px 0 16px;
-      font-size: 24px;
+
+    body {
+      overflow: hidden;
     }
+
     button {
-      min-height: 48px;
-      padding: 10px 16px;
-      border: 0;
-      border-radius: 10px;
-      background: #305771;
+      min-height: 32px;
+      padding: 5px 10px;
+      border: 1px solid #476174;
+      border-radius: 7px;
+      background: #28475d;
       color: #fff;
-      font-size: 16px;
+      font-size: 12px;
+      font-weight: 600;
+      white-space: nowrap;
       cursor: pointer;
+      touch-action: manipulation;
     }
+
     button:disabled {
-      opacity: 0.5;
+      opacity: 0.45;
       cursor: default;
     }
-    .controls {
+
+    button:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+
+    a {
+      color: #9bd8ff;
+    }
+
+    .dashboard {
+      display: grid;
+      grid-template-rows: auto auto minmax(0, 1fr) auto;
+      gap: var(--gap);
+      width: 100%;
+      height: var(--app-height);
+      padding:
+        max(6px, env(safe-area-inset-top))
+        max(6px, env(safe-area-inset-right))
+        max(6px, env(safe-area-inset-bottom))
+        max(6px, env(safe-area-inset-left));
+      overflow: hidden;
+    }
+
+    .toolbar {
       display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
       align-items: center;
+      gap: 6px;
+      min-width: 0;
     }
-    .card {
-      margin-top: 16px;
-      padding: 18px;
-      background: #1d252d;
-      border-radius: 14px;
+
+    .brand {
+      flex: 0 0 auto;
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
     }
-    .label, .note {
-      color: #b3c2cc;
-      font-size: 14px;
-      line-height: 1.6;
+
+    .toolbar-buttons {
+      display: flex;
+      align-items: center;
+      gap: 5px;
     }
+
+    #status {
+      flex: 1;
+      min-width: 0;
+      font-size: 11px;
+      line-height: 1.3;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .address-panel {
+      min-width: 0;
+      padding: 6px 10px;
+      border-radius: 9px;
+      background: var(--panel);
+      border-left: 3px solid var(--accent);
+    }
+
+    .address-heading {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 10px;
+      line-height: 1.2;
+    }
+
+    #address {
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+      margin-top: 3px;
+      overflow: hidden;
+      overflow-wrap: anywhere;
+      font-size: clamp(17px, 2.6vw, 25px);
+      font-weight: 700;
+      line-height: 1.2;
+    }
+
+    .main-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 35fr) minmax(0, 65fr);
+      gap: var(--gap);
+      min-height: 0;
+      min-width: 0;
+    }
+
+    .speed-panel {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 6px;
+      min-width: 0;
+      min-height: 0;
+      padding: 8px;
+      border-radius: 10px;
+      background: var(--panel);
+      overflow: hidden;
+      text-align: center;
+    }
+
+    .label {
+      color: var(--muted);
+      font-size: 11px;
+    }
+
     .numeric {
       font-variant-numeric: tabular-nums;
     }
+
     #speed {
-      font-size: clamp(80px, 22vw, 150px);
-      font-weight: 750;
-      line-height: 1.1;
-      letter-spacing: -0.04em;
-      color: #7fffc8;
-      overflow-wrap: anywhere;
+      color: var(--accent);
+      font-size: clamp(48px, min(12vw, 27vh), 140px);
+      font-weight: 800;
+      line-height: 0.95;
+      letter-spacing: -0.06em;
+      white-space: nowrap;
     }
+
     .unit {
-      font-size: 25px;
-      color: #c3d0d9;
+      color: #cfdae2;
+      font-size: 15px;
+      line-height: 1;
     }
+
     .max-row {
       display: flex;
-      flex-wrap: wrap;
-      gap: 16px;
-      align-items: center;
-      justify-content: space-between;
-      margin-top: 18px;
+      justify-content: center;
+      align-items: baseline;
+      gap: 5px;
+      margin-top: 2px;
+      white-space: nowrap;
+      font-size: 12px;
     }
+
     #maxSpeed {
-      font-size: 30px;
+      font-size: 22px;
+      font-weight: 700;
     }
-    #clock {
-      font-size: 42px;
-      margin-top: 6px;
+
+    #resetMax {
+      align-self: center;
+      min-height: 28px;
+      padding: 3px 9px;
+      font-size: 10px;
+      background: #34404b;
     }
-    .coordinate {
-      font-size: 20px;
-      margin: 4px 0 12px;
-      overflow-wrap: anywhere;
+
+    .acceleration {
+      display: grid;
+      gap: 4px;
+      margin-top: 2px;
+      padding-top: 6px;
+      border-top: 1px solid #35434f;
+      font-size: 11px;
     }
-    #address {
-      margin: 8px 0;
-      font-size: 23px;
-      line-height: 1.5;
-      overflow-wrap: anywhere;
+
+    .acceleration-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
     }
-    #status, #gpsStatus, #wakeStatus {
-      line-height: 1.6;
+
+    .acceleration-row strong {
+      color: #dde8ee;
+      font-weight: 600;
     }
-    #map {
-      height: 350px;
-      margin-top: 12px;
-      background: #303a43;
+
+    .map-panel {
+      position: relative;
+      min-width: 0;
+      min-height: 0;
       border-radius: 10px;
+      overflow: hidden;
+      background: #303a43;
+    }
+
+    #map {
+      width: 100%;
+      height: 100%;
+      min-height: 0;
+      background: #303a43;
       color: #111;
     }
+
     #map.stale {
-      opacity: 0.55;
+      opacity: 0.5;
     }
-    .layout {
+
+    .map-controls {
+      position: absolute;
+      top: 7px;
+      right: 7px;
+      z-index: 500;
+      display: flex;
+      gap: 5px;
+    }
+
+    .map-controls button {
+      min-height: 29px;
+      padding: 4px 8px;
+      background: #172b3e;
+      font-size: 10px;
+      box-shadow: 0 1px 5px #0008;
+    }
+
+    .leaflet-control-attribution {
+      font-size: 9px;
+    }
+
+    .information {
       display: grid;
-      gap: 0 16px;
+      gap: 3px;
+      min-width: 0;
+      padding: 5px 8px;
+      border-radius: 8px;
+      background: var(--panel);
+      font-size: 10px;
+      line-height: 1.25;
     }
-    @media (min-width: 720px) {
-      .layout {
-        grid-template-columns: 1fr 1fr;
+
+    .information-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      gap: 3px 12px;
+    }
+
+    .information-item {
+      white-space: nowrap;
+    }
+
+    .information-item span:first-child {
+      color: var(--muted);
+    }
+
+    #clock {
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    #gpsStatus {
+      color: #ffe09a;
+    }
+
+    #addressStatus,
+    #mapStatus {
+      min-width: 0;
+      color: var(--muted);
+      overflow-wrap: anywhere;
+    }
+
+    .details-overlay[hidden] {
+      display: none;
+    }
+
+    .details-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 2000;
+      display: grid;
+      place-items: center;
+      padding: 16px;
+      background: #000b;
+    }
+
+    .details-card {
+      width: min(560px, 100%);
+      max-height: 100%;
+      overflow: auto;
+      padding: 16px;
+      border: 1px solid #4b6376;
+      border-radius: 12px;
+      background: #1c252e;
+      font-size: 13px;
+      line-height: 1.6;
+      overflow-wrap: anywhere;
+    }
+
+    .details-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .details-header h2 {
+      margin: 0;
+      font-size: 17px;
+    }
+
+    .details-card p {
+      margin: 12px 0 0;
+    }
+
+    @media (orientation: portrait) {
+      .main-grid {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: minmax(150px, 42fr) minmax(0, 58fr);
       }
-      .wide {
-        grid-column: 1 / -1;
+
+      .speed-panel {
+        gap: 4px;
       }
-      #map {
-        height: 420px;
+
+      #speed {
+        font-size: clamp(58px, 20vw, 110px);
+      }
+
+      .acceleration {
+        width: min(270px, 100%);
+        align-self: center;
+      }
+
+      .brand {
+        display: none;
+      }
+
+      .toolbar {
+        flex-wrap: wrap;
+      }
+
+      #status {
+        flex-basis: 100%;
+      }
+
+      #address {
+        font-size: 20px;
+      }
+    }
+
+    @media (orientation: landscape) and (max-height: 430px) {
+      .dashboard {
+        --gap: 4px;
+      }
+
+      .brand {
+        display: none;
+      }
+
+      .address-panel {
+        padding: 4px 8px;
+      }
+
+      .address-heading {
+        font-size: 9px;
+      }
+
+      #address {
+        font-size: clamp(16px, 2.5vw, 21px);
+      }
+
+      .speed-panel {
+        gap: 4px;
+        padding: 5px 8px;
+      }
+
+      #speed {
+        font-size: clamp(42px, min(11vw, 23vh), 90px);
+      }
+
+      .unit {
+        font-size: 12px;
+      }
+
+      #maxSpeed {
+        font-size: 18px;
+      }
+
+      .acceleration {
+        gap: 3px;
+        padding-top: 4px;
+        font-size: 10px;
+      }
+
+      .information {
+        padding: 4px 7px;
+        font-size: 9px;
+      }
+
+      #clock {
+        font-size: 10px;
       }
     }
   </style>
 </head>
 <body>
-  <h1>ROADSTER GPS DASHBOARD</h1>
+  <main class="dashboard">
+    <header class="toolbar">
+      <div class="brand">ROADSTER GPS</div>
 
-  <div class="controls">
-    <button id="connect">ESP32に接続</button>
-    <button id="disconnect" disabled>切断</button>
-    <button id="wake" aria-pressed="false">消灯防止：OFF</button>
-  </div>
-  <p id="status">未接続です</p>
-  <div id="wakeStatus" class="note">消灯防止はOFFです</div>
-
-  <main class="layout">
-    <section class="card">
-      <div class="label">GPS車速</div>
-      <div id="speed" class="numeric">--.-</div>
-      <div class="unit">km/h</div>
-      <div class="max-row">
-        <div>
-          <span class="label">MAX </span>
-          <span id="maxSpeed" class="numeric">0.0</span>
-          <span> km/h</span>
-        </div>
-        <button id="resetMax">MAXリセット</button>
+      <div class="toolbar-buttons">
+        <button id="connect">ESP32に接続</button>
+        <button id="disconnect" disabled>切断</button>
+        <button id="wake" aria-pressed="false">消灯防止：OFF</button>
+        <button
+          id="openDetails"
+          aria-controls="detailsOverlay"
+          aria-expanded="false"
+        >詳細</button>
       </div>
-      <p id="gpsStatus">GPSデータ待ち</p>
-    </section>
 
-    <section class="card">
-      <div class="label">GPS時刻・日本時間（JST）</div>
-      <div id="clock" class="numeric">--:--:--</div>
+      <div id="status" role="status">未接続です</div>
+    </header>
 
-      <div class="label">緯度（度）</div>
-      <div id="latitude" class="coordinate numeric">--</div>
-      <div class="label">経度（度）</div>
-      <div id="longitude" class="coordinate numeric">--</div>
-    </section>
-
-    <section class="card wide">
-      <div class="label">現在地の住所（市区町村・町域）</div>
+    <section class="address-panel">
+      <div class="address-heading">
+        <span>現在地・都道府県／市区町村／町域</span>
+        <span>住所：国土地理院</span>
+      </div>
       <div id="address">GPS測位待ち</div>
-      <div id="addressStatus" class="note">住所は測位後に取得します</div>
-      <div class="note">
-       住所の出典：国土地理院
- <a
- href="https://maps.gsi.go.jp/"
-          target="_blank"
-          rel="noopener noreferrer"
-          style="color:#9bd8ff"
-        >地理院地図</a>
-      </div>
     </section>
 
-    <section class="card wide">
-      <div class="controls">
-        <button id="follow" aria-pressed="true">自動追従：ON</button>
-        <button id="clearTrack">軌跡を消去</button>
+    <div class="main-grid">
+      <section class="speed-panel">
+        <div class="label">GPS車速</div>
+        <div id="speed" class="numeric">--.-</div>
+        <div class="unit">km/h</div>
+
+        <div class="max-row">
+          <span class="label">MAX</span>
+          <span id="maxSpeed" class="numeric">0.0</span>
+          <span>km/h</span>
+        </div>
+
+        <button id="resetMax">MAXリセット</button>
+
+        <div class="acceleration">
+          <div class="acceleration-row">
+            <span>0–60 km/h</span>
+            <strong id="accel60" class="numeric">未計測</strong>
+          </div>
+          <div class="acceleration-row">
+            <span>0–100 km/h</span>
+            <strong id="accel100" class="numeric">未計測</strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="map-panel" aria-label="国土地理院の現在地地図">
+        <div id="map" class="stale"></div>
+
+        <div class="map-controls">
+          <button id="follow" aria-pressed="true">自動追従：ON</button>
+          <button id="clearTrack">軌跡を消去</button>
+        </div>
+      </section>
+    </div>
+
+    <footer class="information">
+      <div class="information-row">
+        <div class="information-item">
+          <span>JST </span>
+          <span id="clock" class="numeric">--:--:--</span>
+        </div>
+        <div class="information-item">
+          <span>緯度 </span>
+          <span id="latitude" class="numeric">--</span>
+        </div>
+        <div class="information-item">
+          <span>経度 </span>
+          <span id="longitude" class="numeric">--</span>
+        </div>
+        <div id="gpsStatus" role="status">GPSデータ待ち</div>
       </div>
-      <div id="map" class="stale"></div>
-      <p id="mapStatus" class="note">地図を読み込んでいます</p>
-    </section>
+      <div id="addressStatus">住所は測位後に取得します</div>
+      <div id="mapStatus">地図を読み込んでいます</div>
+    </footer>
   </main>
 
-  <p class="note">
-    GPS速度は参考表示です。運転中の操作はせず、停車中に設定してください。
-  </p>
+  <div id="detailsOverlay" class="details-overlay" hidden>
+    <section
+      class="details-card"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="detailsTitle"
+      tabindex="-1"
+    >
+      <div class="details-header">
+        <h2 id="detailsTitle">接続・表示の詳細</h2>
+        <button id="closeDetails">閉じる</button>
+      </div>
 
+      <p>
+        <strong>BLE接続状態</strong><br>
+        <span id="connectionDetail">未接続です</span>
+      </p>
+
+      <p>
+        <strong>画面消灯防止</strong><br>
+        <span id="wakeStatus">消灯防止はOFFです</span>
+      </p>
+
+      <p>
+        住所は一定間隔で取得した地点のものです。
+        番地・建物名は含みません。
+        未測位・通信停止・切断時の住所や地図は、過去の情報です。
+      </p>
+
+      <p>
+        0–60／0–100 km/hは表示欄のみで、
+        この版では時間を計測しません。
+      </p>
+
+      <p>
+        MAXと軌跡はページ再読み込みで消えます。
+        GPS速度は参考表示です。操作は停車中に行ってください。
+      </p>
+
+      <p>
+        住所検索先には座標が送信され、
+        地図配信元には閲覧範囲が伝わります。
+      </p>
+
+      <p>
+        地図・住所の出典：
+        <a
+          href="https://maps.gsi.go.jp/"
+          target="_blank"
+          rel="noopener noreferrer"
+        >国土地理院・地理院地図</a>
+      </p>
+    </section>
+  </div>
   <script>
     "use strict";
 
