@@ -1224,22 +1224,37 @@ html {
       });
     }
 
-    async function getMunicipalities() {
-      if (!municipalityPromise) {
-        municipalityPromise = loadScript(
-          "https://maps.gsi.go.jp/js/muni.js"
-        ).then(() => {
-          const municipalities = window.GSI?.MUNI_ARRAY;
-          if (!municipalities) {
-            throw new Error("市区町村一覧を取得できませんでした");
-          }
-          return municipalities;
-        }).catch((error) => {
-          municipalityPromise = null;
-          throw error;
-        });
+   async function getMunicipalities() {
+     // 市区町村一覧のスクリプトが使う保存先を先に用意します。
+     if (!window.GSI) {
+     window.GSI = {};
+     }
+
+     // 一覧が読み込み済みなら、そのまま使います。
+     if (window.GSI.MUNI_ARRAY) {
+     return window.GSI.MUNI_ARRAY;
+     }
+
+     if (!municipalityPromise) {
+       municipalityPromise = loadScript(
+       "https://maps.gsi.go.jp/js/muni.js"
+       ).then(() => {
+        const municipalities = window.GSI.MUNI_ARRAY;
+
+        if (!municipalities) {
+         throw new Error(
+           "市区町村一覧を読み込みましたが、住所データがありません"
+         );
+       }
+
+        return municipalities;
+       }).catch((error) => {
+       municipalityPromise = null;
+       throw error;
+       });
       }
-      return municipalityPromise;
+
+     return municipalityPromise;
     }
 
     // ===== 国土地理院：座標から住所を取得 =====
@@ -1346,10 +1361,12 @@ html {
         addressRetryAt = Date.now() + retryDelay;
 
         el("addressStatus").textContent =
-          "住所を取得できません。約" +
-          Math.round(retryDelay / 1000) +
-          "秒後から再試行します。" +
-          (lastAddressResult ? " 表示中の住所は前回取得したものです。" : "");
+         "住所取得エラー：" +
+          String(error?.message ?? error) +
+         "。約" +
+         Math.round(retryDelay / 1000) +
+         "秒後から再試行します。" +
+         (lastAddressResult ? " 表示中の住所は前回取得したものです。" : "");
 
         console.warn("住所取得:", error);
       } finally {
