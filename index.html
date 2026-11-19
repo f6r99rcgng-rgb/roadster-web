@@ -733,6 +733,131 @@ html {
     font-size: clamp(18px, 5.5vh, 23px);
   }
 }
+/* 上段ボタン：短縮した表示に合わせて幅を節約します。 */
+.toolbar-buttons {
+  flex: 0 0 auto;
+  gap: 4px;
+}
+
+#openDetails {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  padding: 0;
+  font-size: 20px;
+  line-height: 1;
+}
+
+#wake {
+  padding-inline: 7px;
+}
+
+/* 横画面：接続メッセージと時計を同じ行に配置します。 */
+.toolbar {
+  flex-wrap: nowrap;
+}
+
+.connection-row {
+  display: flex;
+  flex: 1 1 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.connection-row #status {
+  flex: 1 1 0;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 以前の時計枠の背景・余白をなくします。 */
+.connection-row > .dashboard-clock {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 5px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  white-space: nowrap;
+}
+
+.connection-row > .dashboard-clock span:first-child {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.connection-row #clock {
+  margin: 0;
+  font-size: clamp(18px, 4.5vh, 24px);
+  font-weight: 700;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 地図側：時計の行をなくし、注釈文と地図の2段にします。 */
+.map-column {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+/* 縦画面：ボタン → 接続メッセージ → 時計の順にします。 */
+@media (orientation: portrait) {
+  .toolbar {
+    flex-wrap: wrap;
+  }
+
+  .connection-row {
+    flex: 1 1 100%;
+    width: 100%;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: flex-start;
+    gap: 3px;
+  }
+
+  .connection-row #status {
+    flex: 0 0 auto;
+    width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .connection-row > .dashboard-clock {
+    justify-content: flex-start;
+  }
+
+  .connection-row #clock {
+    font-size: 21px;
+  }
+}
+
+/* 高さの小さい横画面でも、時計をコンパクトに表示します。 */
+@media (orientation: landscape) and (max-height: 430px) {
+  .connection-row {
+    gap: 6px;
+  }
+
+  .connection-row #clock {
+    font-size: 18px;
+  }
+
+  .connection-row > .dashboard-clock span:first-child {
+    font-size: 9px;
+  }
+}
   </style>
 </head>
 <body>
@@ -743,7 +868,7 @@ html {
       <div class="toolbar-buttons">
         <button id="connect">ESP32に接続</button>
         <button id="disconnect" disabled>切断</button>
-        <button id="wake" aria-pressed="false">消灯防止：OFF</button>
+        <button id="wake" aria-pressed="false">消灯：OFF</button>
         <button
           id="openDetails"
           aria-controls="detailsOverlay"
@@ -838,8 +963,8 @@ html {
       </p>
 
       <p>
-        <strong>画面消灯防止</strong><br>
-        <span id="wakeStatus">消灯防止はOFFです</span>
+        <strong>画面消灯</strong><br>
+        <span id="wakeStatus">消灯はOFFです</span>
       </p>
 
       <p>
@@ -1260,8 +1385,8 @@ html {
     el("wake").addEventListener("click", async () => {
       wakeWanted = !wakeWanted;
       el("wake").textContent = wakeWanted
- ? "消灯防止：ON"
-        : "消灯防止：OFF";
+ ? "消灯：ON"
+        : "消灯：OFF";
       el("wake").setAttribute("aria-pressed", String(wakeWanted));
 
       if (wakeWanted) {
@@ -1680,13 +1805,33 @@ html {
   );
 
   // 既存の時計要素をそのまま使用します。
+  // 詳細ボタンは表示だけ歯車に変更します。
+  // 既存のaria-labelがあれば、その値を維持します。
+  if (!openButton.hasAttribute("aria-label")) {
+    openButton.setAttribute("aria-label", "詳細");
+  }
+
+  const settingsIcon = document.createElement("span");
+  settingsIcon.setAttribute("aria-hidden", "true");
+  settingsIcon.textContent = "⚙";
+  openButton.replaceChildren(settingsIcon);
+
+  // 既存の時計要素を移動します。
+  // #clockのIDと、GPS受信による更新処理は維持します。
   const clockItem = document.getElementById("clock").closest(
     ".information-item"
   );
 
   clockItem.classList.add("dashboard-clock");
 
-  // 住所取得・地図の注釈文も、既存の要素をそのまま移動します。
+  // 接続メッセージと時計をまとめる表示用の行を作ります。
+  const connectionRow = document.createElement("div");
+  connectionRow.className = "connection-row";
+
+  status.before(connectionRow);
+  connectionRow.append(status, clockItem);
+
+  // 注釈文は、前回と同じく速度カードの外に配置します。
   const messages = document.createElement("div");
   messages.className = "panel-messages";
   messages.setAttribute("aria-label", "住所と地図の更新状況");
@@ -1696,15 +1841,14 @@ html {
     document.getElementById("mapStatus")
   );
 
-  // 注釈文・時計・地図をまとめる右側カラムを作ります。
+  // 地図側は「注釈文 → 地図」の2段にします。
+  // 時計用の独立した行は作りません。
   const mapPanel = document.querySelector(".map-panel");
   const mapColumn = document.createElement("div");
 
   mapColumn.className = "map-column";
   mapPanel.before(mapColumn);
-
-  // 縦横とも、時計は必ず地図の直前に配置します。
-  mapColumn.append(messages, clockItem, mapPanel);
+  mapColumn.append(messages, mapPanel);
   let resizeFrame = 0;
   let resizeTimer = 0;
 
